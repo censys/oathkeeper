@@ -2,8 +2,7 @@ name: CI
 on:
   push:
     branches:
-      - censys-master
-  pull_request:
+      - master-censys
 
 # Cancel in-progress runs in current workflow.
 concurrency:
