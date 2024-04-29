@@ -27,5 +27,5 @@ jobs:
       - name: Build and push image
         run: |
           VERSION=$(date -u +%Y.%-m%d.%-s)
-          docker buildx build --platform linux/amd64,linux/arm64 -t ghcr.io/censys/oathkeeper:$VERSION --progress=plain -f .docker/Dockerfile-build .
+          docker buildx build --platform linux/amd64 -t ghcr.io/censys/oathkeeper:$VERSION --progress=plain -f .docker/Dockerfile-build .
           docker push ghcr.io/censys/oathkeeper:$VERSION
