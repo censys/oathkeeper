@@ -25,13 +25,12 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64,linux/arm64
-      - name: Log in to the Container registry
+      - name: Log in to Docker Hub
         uses: docker/login-action@65b78e6e13532edd9afa3aa52ac7964289d1a9c1
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
       - name: Build and push image
         run: |
           VERSION=$(date -u +%Y.%-m%d.%-s)
-          docker buildx build --platform linux/amd64 -t ghcr.io/censys/oathkeeper:$VERSION --progress=plain --tag ghcr.io/censys/oathkeeper:$VERSION --push -f .docker/Dockerfile-build .
+          docker buildx build --platform linux/amd64 -t censys/oathkeeper:$VERSION --progress=plain --tag censys/oathkeeper:$VERSION --push -f .docker/Dockerfile-build .
