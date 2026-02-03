@@ -424,6 +424,12 @@
           "description": "The `subject` field in the ORY Oathkeeper authentication session is set using this JSON Path. Defaults to `subject`. See [GSJON Syntax](https://github.com/tidwall/gjson/blob/master/SYNTAX.md) for reference.",
           "type": "string",
           "default": "subject"
+        },
+        "forward_set_cookie_header": {
+          "title": "Forward Set-Cookie Header",
+          "type": "boolean",
+          "default": false,
+          "description": "When set to true, any Set-Cookie headers from the session check response will be forwarded to the browser response. This is useful for refreshing session cookies when the session store extends the session."
         }
       },
       "required": ["check_session_url"],

@@ -83,6 +83,14 @@ func (d *Proxy) RoundTrip(r *http.Request) (*http.Response, error) {
 				Warn("Access request denied because roundtrip failed")
 			// don't need to return because covered in next line
 		} else {
+			// Inject ResponseHeader from session into the response to browser
+			if sess, ok := r.Context().Value(ContextKeySession).(*authn.AuthenticationSession); ok && sess.ResponseHeader != nil {
+				for key, values := range sess.ResponseHeader {
+					for _, value := range values {
+						res.Header.Add(key, value)
+					}
+				}
+			}
 			d.r.Logger().
 				WithField("granted", true).
 				WithFields(fields).

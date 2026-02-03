@@ -43,10 +43,11 @@ func NewErrAuthenticatorMisconfigured(a Authenticator, err error) *herodot.Defau
 }
 
 type AuthenticationSession struct {
-	Subject      string                 `json:"subject"`
-	Extra        map[string]interface{} `json:"extra"`
-	Header       http.Header            `json:"header"`
-	MatchContext MatchContext           `json:"match_context"`
+	Subject        string                 `json:"subject"`
+	Extra          map[string]interface{} `json:"extra"`
+	Header         http.Header            `json:"header"`
+	ResponseHeader http.Header            `json:"response_header"` // Headers to add to the browser response
+	MatchContext   MatchContext           `json:"match_context"`
 }
 
 type MatchContext struct {
@@ -71,6 +72,22 @@ func (a *AuthenticationSession) SetHeader(key, val string) {
 		a.Header = map[string][]string{}
 	}
 	a.Header.Set(key, val)
+}
+
+// SetResponseHeader sets a header that will be added to the browser response
+func (a *AuthenticationSession) SetResponseHeader(key, val string) {
+	if a.ResponseHeader == nil {
+		a.ResponseHeader = map[string][]string{}
+	}
+	a.ResponseHeader.Set(key, val)
+}
+
+// AddResponseHeader adds a header value to the browser response (allows multiple values for same key)
+func (a *AuthenticationSession) AddResponseHeader(key, val string) {
+	if a.ResponseHeader == nil {
+		a.ResponseHeader = map[string][]string{}
+	}
+	a.ResponseHeader.Add(key, val)
 }
 
 func (a *AuthenticationSession) Copy() *AuthenticationSession {
