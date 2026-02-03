@@ -141,7 +141,7 @@ func (a *AuthenticatorBearerToken) Authenticate(r *http.Request, session *Authen
 		return errors.WithStack(ErrAuthenticatorNotResponsible)
 	}
 
-	body, err := forwardRequestToSessionStore(a.client, r, cf)
+	resp, err := forwardRequestToSessionStore(a.client, r, cf)
 	if err != nil {
 		return err
 	}
@@ -150,16 +150,16 @@ func (a *AuthenticatorBearerToken) Authenticate(r *http.Request, session *Authen
 		subject string
 		extra   map[string]interface{}
 
-		subjectRaw = []byte(stringsx.Coalesce(gjson.GetBytes(body, cf.SubjectFrom).Raw, "null"))
-		extraRaw   = []byte(stringsx.Coalesce(gjson.GetBytes(body, cf.ExtraFrom).Raw, "null"))
+		subjectRaw = []byte(stringsx.Coalesce(gjson.GetBytes(resp.Body, cf.SubjectFrom).Raw, "null"))
+		extraRaw   = []byte(stringsx.Coalesce(gjson.GetBytes(resp.Body, cf.ExtraFrom).Raw, "null"))
 	)
 
 	if err = json.Unmarshal(subjectRaw, &subject); err != nil {
-		return helper.ErrForbidden.WithReasonf("The configured subject_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.SubjectFrom, body, subjectRaw).WithTrace(err)
+		return helper.ErrForbidden.WithReasonf("The configured subject_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.SubjectFrom, resp.Body, subjectRaw).WithTrace(err)
 	}
 
 	if err = json.Unmarshal(extraRaw, &extra); err != nil {
-		return helper.ErrForbidden.WithReasonf("The configured extra_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.ExtraFrom, body, extraRaw).WithTrace(err)
+		return helper.ErrForbidden.WithReasonf("The configured extra_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.ExtraFrom, resp.Body, extraRaw).WithTrace(err)
 	}
 
 	session.Subject = subject

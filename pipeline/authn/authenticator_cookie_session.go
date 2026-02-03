@@ -36,16 +36,17 @@ type AuthenticatorCookieSessionFilter struct {
 }
 
 type AuthenticatorCookieSessionConfiguration struct {
-	Only               []string          `json:"only"`
-	CheckSessionURL    string            `json:"check_session_url"`
-	PreserveQuery      bool              `json:"preserve_query"`
-	PreservePath       bool              `json:"preserve_path"`
-	ExtraFrom          string            `json:"extra_from"`
-	SubjectFrom        string            `json:"subject_from"`
-	PreserveHost       bool              `json:"preserve_host"`
-	ForwardHTTPHeaders []string          `json:"forward_http_headers"`
-	SetHeaders         map[string]string `json:"additional_headers"`
-	ForceMethod        string            `json:"force_method"`
+	Only                   []string          `json:"only"`
+	CheckSessionURL        string            `json:"check_session_url"`
+	PreserveQuery          bool              `json:"preserve_query"`
+	PreservePath           bool              `json:"preserve_path"`
+	ExtraFrom              string            `json:"extra_from"`
+	SubjectFrom            string            `json:"subject_from"`
+	PreserveHost           bool              `json:"preserve_host"`
+	ForwardHTTPHeaders     []string          `json:"forward_http_headers"`
+	SetHeaders             map[string]string `json:"additional_headers"`
+	ForceMethod            string            `json:"force_method"`
+	ForwardSetCookieHeader bool              `json:"forward_set_cookie_header"` // Forward Set-Cookie header from session check to browser response
 }
 
 func (a *AuthenticatorCookieSessionConfiguration) GetCheckSessionURL() string {
@@ -144,7 +145,7 @@ func (a *AuthenticatorCookieSession) Authenticate(r *http.Request, session *Auth
 		return errors.WithStack(ErrAuthenticatorNotResponsible)
 	}
 
-	body, err := forwardRequestToSessionStore(a.client, r, cf)
+	resp, err := forwardRequestToSessionStore(a.client, r, cf)
 	if err != nil {
 		return err
 	}
@@ -153,20 +154,30 @@ func (a *AuthenticatorCookieSession) Authenticate(r *http.Request, session *Auth
 		subject string
 		extra   map[string]interface{}
 
-		subjectRaw = []byte(stringsx.Coalesce(gjson.GetBytes(body, cf.SubjectFrom).Raw, "null"))
-		extraRaw   = []byte(stringsx.Coalesce(gjson.GetBytes(body, cf.ExtraFrom).Raw, "null"))
+		subjectRaw = []byte(stringsx.Coalesce(gjson.GetBytes(resp.Body, cf.SubjectFrom).Raw, "null"))
+		extraRaw   = []byte(stringsx.Coalesce(gjson.GetBytes(resp.Body, cf.ExtraFrom).Raw, "null"))
 	)
 
 	if err = json.Unmarshal(subjectRaw, &subject); err != nil {
-		return helper.ErrForbidden.WithReasonf("The configured subject_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.SubjectFrom, body, subjectRaw).WithTrace(err)
+		return helper.ErrForbidden.WithReasonf("The configured subject_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.SubjectFrom, resp.Body, subjectRaw).WithTrace(err)
 	}
 
 	if err = json.Unmarshal(extraRaw, &extra); err != nil {
-		return helper.ErrForbidden.WithReasonf("The configured extra_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.ExtraFrom, body, extraRaw).WithTrace(err)
+		return helper.ErrForbidden.WithReasonf("The configured extra_from GJSON path returned an error on JSON output: %s", err.Error()).WithDebugf("GJSON path: %s\nBody: %s\nResult: %s", cf.ExtraFrom, resp.Body, extraRaw).WithTrace(err)
 	}
 
 	session.Subject = subject
 	session.Extra = extra
+
+	// Forward Set-Cookie headers from session store response to browser if configured
+	if cf.ForwardSetCookieHeader {
+		if setCookies := resp.Headers.Values("Set-Cookie"); len(setCookies) > 0 {
+			for _, cookie := range setCookies {
+				session.AddResponseHeader("Set-Cookie", cookie)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -184,7 +195,13 @@ func cookieSessionResponsible(r *http.Request, only []string) bool {
 	return false
 }
 
-func forwardRequestToSessionStore(client *http.Client, r *http.Request, cf AuthenticatorForwardConfig) (json.RawMessage, error) {
+// sessionStoreResponse holds the response from the session store
+type sessionStoreResponse struct {
+	Body    json.RawMessage
+	Headers http.Header
+}
+
+func forwardRequestToSessionStore(client *http.Client, r *http.Request, cf AuthenticatorForwardConfig) (*sessionStoreResponse, error) {
 	req, err := PrepareRequest(r, cf)
 	if err != nil {
 		return nil, err
@@ -201,11 +218,14 @@ func forwardRequestToSessionStore(client *http.Client, r *http.Request, cf Authe
 	if res.StatusCode == http.StatusOK {
 		body, err := io.ReadAll(res.Body)
 		if err != nil {
-			return json.RawMessage{}, errors.WithStack(herodot.ErrInternalServerError.WithReasonf("Unable to fetch cookie session context from remote: %+v", err))
+			return nil, errors.WithStack(herodot.ErrInternalServerError.WithReasonf("Unable to fetch cookie session context from remote: %+v", err))
 		}
-		return body, nil
+		return &sessionStoreResponse{
+			Body:    body,
+			Headers: res.Header,
+		}, nil
 	} else {
-		return json.RawMessage{}, errors.WithStack(helper.ErrUnauthorized)
+		return nil, errors.WithStack(helper.ErrUnauthorized)
 	}
 }
 

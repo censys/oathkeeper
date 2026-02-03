@@ -278,6 +278,62 @@ func TestAuthenticatorCookieSession(t *testing.T) {
 				Extra:   map[string]interface{}{"session": map[string]interface{}{"foo": "bar"}, "identity": map[string]interface{}{"id": "123"}},
 			}, session)
 		})
+
+		t.Run("description=should forward Set-Cookie header when forward_set_cookie_header is true", func(t *testing.T) {
+			session := new(AuthenticationSession)
+			testServer, _ := makeServerWithHeaders(t, 200, `{"subject": "123", "extra": {"foo": "bar"}}`, map[string][]string{
+				"Set-Cookie": {"session=abc123; Path=/; HttpOnly", "refresh=xyz789; Path=/; Secure"},
+			})
+			err := pipelineAuthenticator.Authenticate(
+				makeRequest("GET", "/", "", map[string]string{"sessionid": "zyx"}, ""),
+				session,
+				json.RawMessage(fmt.Sprintf(`{"check_session_url": "%s", "forward_set_cookie_header": true}`, testServer.URL)),
+				nil,
+			)
+			require.NoError(t, err, "%#v", errors.Cause(err))
+			assert.Equal(t, "123", session.Subject)
+			assert.Equal(t, map[string]interface{}{"foo": "bar"}, session.Extra)
+			// Check that Set-Cookie headers are captured in ResponseHeader
+			require.NotNil(t, session.ResponseHeader)
+			setCookies := session.ResponseHeader.Values("Set-Cookie")
+			assert.Len(t, setCookies, 2)
+			assert.Contains(t, setCookies, "session=abc123; Path=/; HttpOnly")
+			assert.Contains(t, setCookies, "refresh=xyz789; Path=/; Secure")
+		})
+
+		t.Run("description=should not forward Set-Cookie header when forward_set_cookie_header is false", func(t *testing.T) {
+			session := new(AuthenticationSession)
+			testServer, _ := makeServerWithHeaders(t, 200, `{"subject": "123", "extra": {"foo": "bar"}}`, map[string][]string{
+				"Set-Cookie": {"session=abc123; Path=/; HttpOnly"},
+			})
+			err := pipelineAuthenticator.Authenticate(
+				makeRequest("GET", "/", "", map[string]string{"sessionid": "zyx"}, ""),
+				session,
+				json.RawMessage(fmt.Sprintf(`{"check_session_url": "%s", "forward_set_cookie_header": false}`, testServer.URL)),
+				nil,
+			)
+			require.NoError(t, err, "%#v", errors.Cause(err))
+			assert.Equal(t, "123", session.Subject)
+			// ResponseHeader should be nil when not forwarding cookies
+			assert.Nil(t, session.ResponseHeader)
+		})
+
+		t.Run("description=should not forward Set-Cookie header by default", func(t *testing.T) {
+			session := new(AuthenticationSession)
+			testServer, _ := makeServerWithHeaders(t, 200, `{"subject": "123", "extra": {"foo": "bar"}}`, map[string][]string{
+				"Set-Cookie": {"session=abc123; Path=/; HttpOnly"},
+			})
+			err := pipelineAuthenticator.Authenticate(
+				makeRequest("GET", "/", "", map[string]string{"sessionid": "zyx"}, ""),
+				session,
+				json.RawMessage(fmt.Sprintf(`{"check_session_url": "%s"}`, testServer.URL)),
+				nil,
+			)
+			require.NoError(t, err, "%#v", errors.Cause(err))
+			assert.Equal(t, "123", session.Subject)
+			// ResponseHeader should be nil by default (feature off)
+			assert.Nil(t, session.ResponseHeader)
+		})
 	})
 }
 
@@ -337,11 +393,21 @@ type RequestRecorder struct {
 }
 
 func makeServer(t *testing.T, statusCode int, responseBody string) (*httptest.Server, *RequestRecorder) {
+	return makeServerWithHeaders(t, statusCode, responseBody, nil)
+}
+
+func makeServerWithHeaders(t *testing.T, statusCode int, responseBody string, responseHeaders map[string][]string) (*httptest.Server, *RequestRecorder) {
 	requestRecorder := &RequestRecorder{}
 	testServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestRecorder.requests = append(requestRecorder.requests, r)
 		requestBody, _ := io.ReadAll(r.Body)
 		requestRecorder.bodies = append(requestRecorder.bodies, requestBody)
+		// Set response headers before WriteHeader
+		for key, values := range responseHeaders {
+			for _, value := range values {
+				w.Header().Add(key, value)
+			}
+		}
 		w.WriteHeader(statusCode)
 		w.Write([]byte(responseBody))
 	}))
